@@ -20,9 +20,29 @@ api_version = "2026-01"
   topics = [ "app/scopes_update" ]
   uri = "/webhooks/app/scopes_update"
 
+  [[webhooks.subscriptions]]
+  topics = [ "orders/create" ]
+  uri = "/webhooks/orders/create"
+
+  [[webhooks.subscriptions]]
+  topics = [ "orders/updated" ]
+  uri = "/webhooks/orders/updated"
+
+  [[webhooks.subscriptions]]
+  topics = [ "discounts/create" ]
+  uri = "/webhooks/discounts/create"
+
+  [[webhooks.subscriptions]]
+  topics = [ "discounts/update" ]
+  uri = "/webhooks/discounts/update"
+
+  [[webhooks.subscriptions]]
+  topics = [ "discounts/delete" ]
+  uri = "/webhooks/discounts/delete"
+
 [access_scopes]
 # Learn more at https://shopify.dev/docs/apps/tools/cli/configuration#access_scopes
-scopes = "write_products"
+scopes = "write_products, read_products, read_orders, write_orders, read_discounts, write_discounts"
 
 [auth]
 redirect_urls = [ "https://example.com/api/auth" ]
