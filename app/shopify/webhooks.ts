@@ -520,7 +520,6 @@ export class ShopifyWebhookService {
       // Categorize discount applications
       const automaticDiscounts = discountApplications.filter((app: any) => app.__typename === 'AutomaticDiscountApplication')
       const manualDiscounts = discountApplications.filter((app: any) => app.__typename === 'ManualDiscountApplication')
-      const scriptDiscounts = discountApplications.filter((app: any) => app.__typename === 'ScriptDiscountApplication')
 
       const orderToInsert: any = {
         shop_id: shopId,
@@ -536,7 +535,6 @@ export class ShopifyWebhookService {
         discount_allocations: lineItemDiscountAllocations,
         automatic_discount_applications: automaticDiscounts,
         manual_discount_applications: manualDiscounts,
-        script_discount_applications: scriptDiscounts,
         processed_at: null
       }
 
@@ -671,7 +669,6 @@ export class ShopifyWebhookService {
       // Categorize discount applications
       const automaticDiscounts = discountApplications.filter((app: any) => app.__typename === 'AutomaticDiscountApplication')
       const manualDiscounts = discountApplications.filter((app: any) => app.__typename === 'ManualDiscountApplication')
-      const scriptDiscounts = discountApplications.filter((app: any) => app.__typename === 'ScriptDiscountApplication')
 
       // Build partial update to avoid overwriting with empty values
       const orderToUpdate: any = { raw_data: orderData, updated_at: new Date().toISOString() }
@@ -685,7 +682,6 @@ export class ShopifyWebhookService {
       if (lineItemDiscountAllocations && lineItemDiscountAllocations.length >= 0) orderToUpdate.discount_allocations = lineItemDiscountAllocations
       if (automaticDiscounts && automaticDiscounts.length >= 0) orderToUpdate.automatic_discount_applications = automaticDiscounts
       if (manualDiscounts && manualDiscounts.length >= 0) orderToUpdate.manual_discount_applications = manualDiscounts
-      if (scriptDiscounts && scriptDiscounts.length >= 0) orderToUpdate.script_discount_applications = scriptDiscounts
       // Partial update for channel fields
       if ((orderData as any).source_name) orderToUpdate.channel_source_name = (orderData as any).source_name
       if ((orderData as any).app_id) orderToUpdate.channel_app_id = (orderData as any).app_id
@@ -1111,8 +1107,6 @@ export class ShopifyWebhookService {
       if (isAutomatic) discountToInsert.is_automatic = true
       else discountToInsert.is_automatic = false
 
-      if (amount !== null) discountToInsert.amount = amount
-      if (percentage !== null) discountToInsert.percentage = percentage
       if (amount !== null) discountToInsert.value_type = 'fixed_amount'
       else if (percentage !== null) discountToInsert.value_type = 'percentage'
       if (amount !== null) discountToInsert.value_amount = amount
@@ -1135,10 +1129,10 @@ export class ShopifyWebhookService {
       if (discount.status || discountData.status) discountToInsert.status = discount.status || discountData.status
 
       if (customerSelection) discountToInsert.customer_selection = customerSelection
-      if (prerequisiteCustomers && prerequisiteCustomers.length >= 0) discountToInsert.prerequisite_customers = JSON.stringify(prerequisiteCustomers)
-      if (entitledProducts && entitledProducts.length >= 0) discountToInsert.entitled_products = JSON.stringify(entitledProducts)
-      if (entitledCollections && entitledCollections.length >= 0) discountToInsert.entitled_collections = JSON.stringify(entitledCollections)
-      if (entitledCountries && entitledCountries.length >= 0) discountToInsert.entitled_countries = JSON.stringify(entitledCountries)
+      if (prerequisiteCustomers && prerequisiteCustomers.length >= 0) discountToInsert.prerequisite_customers = prerequisiteCustomers
+      if (entitledProducts && entitledProducts.length >= 0) discountToInsert.entitled_products = entitledProducts
+      if (entitledCollections && entitledCollections.length >= 0) discountToInsert.entitled_collections = entitledCollections
+      if (entitledCountries && entitledCountries.length >= 0) discountToInsert.entitled_countries = entitledCountries
 
       if (combinesWithOrderDiscounts !== undefined) discountToInsert.combines_with_order_discounts = combinesWithOrderDiscounts
       if (combinesWithProductDiscounts !== undefined) discountToInsert.combines_with_product_discounts = combinesWithProductDiscounts
@@ -1202,7 +1196,7 @@ export class ShopifyWebhookService {
       const shopifyDiscountId = this.extractShopifyId(discountData.id)
       
       // Extract values from transformed data
-      const discountToInsert = {
+      const discountToInsert: any = {
         shop_id: shopId,
         shopify_discount_id: shopifyDiscountId,
         raw_data: discountData.rawData || discountData,
@@ -1211,8 +1205,6 @@ export class ShopifyWebhookService {
         code: discountData.code || null,
         discount_class: discountData.discountClass || 'product',
         is_automatic: isAutomatic,
-        amount: discountData.valueAmount,
-        percentage: discountData.valuePercentage,
         value_type: discountData.valueType || 'percentage',
         value_amount: discountData.valueAmount,
         value_percentage: discountData.valuePercentage,
@@ -1229,10 +1221,10 @@ export class ShopifyWebhookService {
         ends_at: discountData.endsAt,
         status: discountData.status,
         customer_selection: discountData.customerSelection || 'all',
-        prerequisite_customers: JSON.stringify(discountData.prerequisiteCustomers || []),
-        entitled_products: JSON.stringify(discountData.entitledProducts || []),
-        entitled_collections: JSON.stringify(discountData.entitledCollections || []),
-        entitled_countries: JSON.stringify(discountData.entitledCountries || []),
+        prerequisite_customers: discountData.prerequisiteCustomers || [],
+        entitled_products: discountData.entitledProducts || [],
+        entitled_collections: discountData.entitledCollections || [],
+        entitled_countries: discountData.entitledCountries || [],
         combines_with_order_discounts: discountData.combinesWithOrderDiscounts || false,
         combines_with_product_discounts: discountData.combinesWithProductDiscounts || false,
         combines_with_shipping_discounts: discountData.combinesWithShippingDiscounts || false,
