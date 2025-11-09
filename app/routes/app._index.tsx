@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
@@ -9,35 +9,9 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
-const promotions = [
-  { id: "promo-1", name: "Holiday Sale" },
-  { id: "promo-2", name: "Spring Clearance" },
-  { id: "promo-3", name: "BOGO Weekend" },
-  { id: "promo-4", name: "VIP Exclusive" },
-];
+// Promotions list (if needed later) has been removed for now
 
-const SelectionMenu = () => {
-  const [selectedPromotion, setSelectedPromotion] = useState(promotions[0].id);
-
-  return (
-    <s-section padding="base">
-        <s-grid gridTemplateColumns="1fr 1fr" gap="small">
-          <s-select
-            label="Select promotion"
-            name="promotion"
-            onChange={(e: any) => setSelectedPromotion(e.target.value)}
-          >
-            {promotions.map((p) => (
-              <s-option key={p.id} value={p.id} selected={p.id === selectedPromotion}>
-                {p.name}
-              </s-option>
-            ))}
-          </s-select>
-          <s-date-field label="Start Date"defaultView="2025-09" defaultValue="2025-09-01" />
-        </s-grid>
-      </s-section>
-  )
-}
+// Selection controls were moved inline on the page header
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
@@ -118,9 +92,6 @@ export default function Index() {
   const fetcher = useFetcher<typeof action>();
 
   const shopify = useAppBridge();
-  const isLoading =
-    ["loading", "submitting"].includes(fetcher.state) &&
-    fetcher.formMethod === "POST";
 
   useEffect(() => {
     if (fetcher.data?.product?.id) {
@@ -133,17 +104,17 @@ export default function Index() {
       <s-button slot="primary-action">
         View Dashboard
       </s-button>
-      
-      <s-stack direction="inline" justifyContent="space-between" gap="small" paddingBlock="small-200">
-        <s-button>
-          All channels <s-icon type="caret-down"></s-icon>
-        </s-button>
-        <s-stack direction="inline" gap="small">
-          <s-button icon="calendar">Last 7 days</s-button>
-          <s-button icon="calendar">Last 30 days</s-button>
-          <s-button icon="calendar">Last 90 days</s-button>
+      <s-stack direction="block" gap="base">
+        <s-stack direction="inline" justifyContent="space-between" gap="small">
+          <s-button>
+            All channels <s-icon type="caret-down"></s-icon>
+          </s-button>
+          <s-stack direction="inline" gap="small">
+            <s-button icon="calendar">Last 7 days</s-button>
+            <s-button icon="calendar">Last 30 days</s-button>
+            <s-button icon="calendar">Entire Period</s-button>
+          </s-stack>
         </s-stack>
-      </s-stack>
 
       <s-section padding="base">
         <s-grid
@@ -221,13 +192,103 @@ export default function Index() {
         </s-grid>
       </s-section>
 
-      <s-section heading="Discounted Sales Over Time">
-        
+      <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base">
+        <s-grid-item gridColumn="span 2" gridRow="span 1">
+          <s-section heading="Discounted Sales Over Time">
+            <s-box border="base" borderRadius="base" padding="base">
+              <s-text color="subdued">Chart placeholder</s-text>
+            </s-box>
+          </s-section>
+        </s-grid-item>
+        <s-grid-item gridColumn="span 1" gridRow="span 1">
+          <s-section heading="Next Chart">
+            <s-box border="base" borderRadius="base" padding="base">
+              <s-text color="subdued">Chart placeholder</s-text>
+            </s-box>
+          </s-section>
+        </s-grid-item>
+      </s-grid>
+
+      <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base">
+        <s-grid-item gridColumn="span 1" gridRow="span 1">
+          <s-section heading="Next Chart"></s-section>
+        </s-grid-item>
+        <s-grid-item gridColumn="span 1" gridRow="span 1">
+          <s-section heading="Next Chart"></s-section>
+        </s-grid-item>
+        <s-grid-item gridColumn="span 1" gridRow="span 1">
+          <s-section heading="Next Chart"></s-section>
+        </s-grid-item>
+      </s-grid>
+
+      <s-section padding="base">
+        <s-table>
+          <s-table-header-row>
+            <s-table-header listSlot="primary">Product</s-table-header>
+            <s-table-header listSlot="kicker">SKU</s-table-header>
+            <s-table-header listSlot="inline">Status</s-table-header>
+            <s-table-header listSlot="labeled" format="numeric">Inventory</s-table-header>
+            <s-table-header listSlot="labeled" format="currency">Price</s-table-header>
+            <s-table-header listSlot="labeled">Last updated</s-table-header>
+          </s-table-header-row>
+
+          <s-table-body>
+            <s-table-row>
+              <s-table-cell>Water bottle</s-table-cell>
+              <s-table-cell>WB-001</s-table-cell>
+              <s-table-cell>
+                <s-badge tone="success">Active</s-badge>
+              </s-table-cell>
+              <s-table-cell>128</s-table-cell>
+              <s-table-cell>$24.99</s-table-cell>
+              <s-table-cell>2 hours ago</s-table-cell>
+            </s-table-row>
+            <s-table-row>
+              <s-table-cell>T-shirt</s-table-cell>
+              <s-table-cell>TS-002</s-table-cell>
+              <s-table-cell>
+                <s-badge tone="warning">Low stock</s-badge>
+              </s-table-cell>
+              <s-table-cell>15</s-table-cell>
+              <s-table-cell>$19.99</s-table-cell>
+              <s-table-cell>1 day ago</s-table-cell>
+            </s-table-row>
+            <s-table-row>
+              <s-table-cell>Cutting board</s-table-cell>
+              <s-table-cell>CB-003</s-table-cell>
+              <s-table-cell>
+                <s-badge tone="critical">Out of stock</s-badge>
+              </s-table-cell>
+              <s-table-cell>0</s-table-cell>
+              <s-table-cell>$34.99</s-table-cell>
+              <s-table-cell>3 days ago</s-table-cell>
+            </s-table-row>
+            <s-table-row>
+              <s-table-cell>Notebook set</s-table-cell>
+              <s-table-cell>NB-004</s-table-cell>
+              <s-table-cell>
+                <s-badge tone="success">Active</s-badge>
+              </s-table-cell>
+              <s-table-cell>245</s-table-cell>
+              <s-table-cell>$12.99</s-table-cell>
+              <s-table-cell>5 hours ago</s-table-cell>
+            </s-table-row>
+            <s-table-row>
+              <s-table-cell>Stainless steel straws</s-table-cell>
+              <s-table-cell>SS-005</s-table-cell>
+              <s-table-cell>
+                <s-badge tone="success">Active</s-badge>
+              </s-table-cell>
+              <s-table-cell>89</s-table-cell>
+              <s-table-cell>$9.99</s-table-cell>
+              <s-table-cell>1 hour ago</s-table-cell>
+            </s-table-row>
+          </s-table-body>
+        </s-table>
       </s-section>
 
-      <s-section heading="Next Chart">
-        
-      </s-section>
+      </s-stack>
+
     </s-page>
   );
 }
