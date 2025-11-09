@@ -1,7 +1,10 @@
 import type { ActionFunctionArgs } from "react-router";
-import { authenticate } from "../../shopify.server";
-import { ShopifyWebhookService } from "../../shopify/webhooks";
-import type { WebhookPayload } from "../../shopify/webhooks";
+import { authenticate } from "../shopify.server";
+import { ShopifyWebhookService } from "../shopify/webhooks";
+import type { WebhookPayload } from "../shopify/webhooks";
+
+export const loader = () =>
+  new Response("Method Not Allowed", { status: 405 });
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
@@ -26,4 +29,6 @@ export const action = async ({ request }: ActionFunctionArgs) => {
     return new Response("Error processed", { status: 200 });
   }
 };
+
+ 
 

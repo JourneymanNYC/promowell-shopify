@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
-import { authenticate } from "../../shopify.server";
-import { OrdersSyncService } from "../../shopify/services/orders-sync.server";
+import { authenticate } from "../shopify.server";
+import { DiscountsSyncService } from "../shopify/services/discounts-sync.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   try {
@@ -15,20 +15,18 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
 
     const url = new URL(request.url);
     const daysBackParam = url.searchParams.get("daysBack");
-    const daysBack = daysBackParam ? parseInt(daysBackParam, 10) : 60;
+    const daysBack = daysBackParam ? parseInt(daysBackParam, 10) : 365;
 
-    // Validate daysBack
-    if (isNaN(daysBack) || daysBack < 1 || daysBack > 365) {
-      return new Response(JSON.stringify({ success: false, error: "daysBack must be between 1 and 365" }), {
+    if (isNaN(daysBack) || daysBack < 1 || daysBack > 730) {
+      return new Response(JSON.stringify({ success: false, error: "daysBack must be between 1 and 730" }), {
         status: 400,
         headers: { "Content-Type": "application/json" }
       });
     }
 
-    console.log(`Manual sync triggered for ${session.shop} (${daysBack} days back)`);
+    console.log(`Manual discount sync triggered for ${session.shop} (${daysBack} days back)`);
 
-    // Trigger sync
-    const result = await OrdersSyncService.syncHistoricalOrders(
+    const result = await DiscountsSyncService.syncHistoricalDiscounts(
       admin,
       session.shop,
       daysBack
@@ -40,12 +38,14 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     });
     
   } catch (error) {
-    console.error("Error in manual orders sync:", error);
+    console.error("Error in manual discounts sync:", error);
     return new Response(
       JSON.stringify({
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
-        ordersSynced: 0,
+        discountsSynced: 0,
+        codeDiscountsSynced: 0,
+        automaticDiscountsSynced: 0,
         errors: [],
         startDate: "",
         endDate: ""
@@ -55,8 +55,8 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   }
 };
 
-// Also support POST for triggering sync
 export const action = async ({ request }: LoaderFunctionArgs) => {
   return loader({ request } as LoaderFunctionArgs);
 };
+
 

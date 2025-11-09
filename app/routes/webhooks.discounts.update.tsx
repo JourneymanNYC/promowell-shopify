@@ -1,6 +1,9 @@
 import type { ActionFunctionArgs } from "react-router";
-import { authenticate } from "../../shopify.server";
-import { ShopifyWebhookService } from "../../shopify/webhooks";
+import { authenticate } from "../shopify.server";
+import { ShopifyWebhookService } from "../shopify/webhooks";
+
+export const loader = () =>
+  new Response("Method Not Allowed", { status: 405 });
 
 export const action = async ({ request }: ActionFunctionArgs) => {
   try {
@@ -13,16 +16,18 @@ export const action = async ({ request }: ActionFunctionArgs) => {
       return new Response("No payload", { status: 400 });
     }
 
-    // Store discount in Supabase
+    // Update discount in Supabase
     await ShopifyWebhookService.handleDiscountCodeUpdated(payload, shop);
 
-    console.log(`Successfully processed discount creation for ${shop}`);
+    console.log(`Successfully processed discount update for ${shop}`);
     
     return new Response("OK", { status: 200 });
   } catch (error) {
-    console.error("Error processing discounts/create webhook:", error);
+    console.error("Error processing discounts/update webhook:", error);
     // Return 200 to prevent Shopify from retrying
     return new Response("Error processed", { status: 200 });
   }
 };
+
+ 
 
