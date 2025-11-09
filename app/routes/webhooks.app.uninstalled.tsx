@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { ShopifyWebhookService } from "../shopify/webhooks";
 
 export const loader = () =>
   new Response("Method Not Allowed", { status: 405 });
@@ -14,6 +15,11 @@ export const action = async ({ request }: ActionFunctionArgs) => {
   // If this webhook already ran, the session may have been deleted previously.
   if (session) {
     await db.session.deleteMany({ where: { shop } });
+  }
+
+  if (shop) {
+    // Mark shop inactive and clean up raw data in Supabase
+    await ShopifyWebhookService.handleAppUninstalled(shop);
   }
 
   return new Response();

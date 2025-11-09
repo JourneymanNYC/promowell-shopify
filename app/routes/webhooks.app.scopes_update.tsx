@@ -1,6 +1,7 @@
 import type { ActionFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
 import db from "../db.server";
+import { ShopifyWebhookService } from "../shopify/webhooks";
 
 export const loader = () =>
   new Response("Method Not Allowed", { status: 405 });
@@ -19,6 +20,10 @@ export const action = async ({ request }: ActionFunctionArgs) => {
                 scope: current.toString(),
             },
         });
+    }
+    if (shop && Array.isArray(current)) {
+        // Update scopes in Supabase shops table
+        await ShopifyWebhookService.handleScopesUpdate(shop, current);
     }
     return new Response();
 };

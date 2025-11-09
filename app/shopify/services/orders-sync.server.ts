@@ -55,77 +55,60 @@ export class OrdersSyncService {
                     name
                     sourceName
                     app { id }
-                    totalPrice
-                    subtotalPrice
-                    totalTax
-                    totalDiscounts
                     currencyCode
                     createdAt
                     updatedAt
+                    totalPriceSet { shopMoney { amount currencyCode } }
+                    subtotalPriceSet { shopMoney { amount currencyCode } }
+                    totalTaxSet { shopMoney { amount currencyCode } }
+                    totalDiscountsSet { shopMoney { amount currencyCode } }
                     discountApplications(first: 250) {
-                      edges {
-                        node {
-                          ... on DiscountCodeApplication {
-                            allocationMethod
-                            targetSelection
-                            targetType
-                            value {
-                              ... on MoneyV2 {
-                                amount
-                                currencyCode
-                              }
-                              ... on PricingPercentageValue {
-                                percentage
-                              }
-                            }
-                            code
+                      nodes {
+                        __typename
+                        ... on DiscountCodeApplication {
+                          allocationMethod
+                          targetSelection
+                          targetType
+                          value {
+                            __typename
+                            ... on MoneyV2 { amount currencyCode }
+                            ... on PricingPercentageValue { percentage }
                           }
-                          ... on ManualDiscountApplication {
-                            allocationMethod
-                            targetSelection
-                            targetType
-                            value {
-                              ... on MoneyV2 {
-                                amount
-                                currencyCode
-                              }
-                              ... on PricingPercentageValue {
-                                percentage
-                              }
-                            }
-                            title
-                            description
+                          code
+                        }
+                        ... on ManualDiscountApplication {
+                          allocationMethod
+                          targetSelection
+                          targetType
+                          value {
+                            __typename
+                            ... on MoneyV2 { amount currencyCode }
+                            ... on PricingPercentageValue { percentage }
                           }
-                          ... on AutomaticDiscountApplication {
-                            allocationMethod
-                            targetSelection
-                            targetType
-                            value {
-                              ... on MoneyV2 {
-                                amount
-                                currencyCode
-                              }
-                              ... on PricingPercentageValue {
-                                percentage
-                              }
-                            }
-                            title
+                          title
+                          description
+                        }
+                        ... on AutomaticDiscountApplication {
+                          allocationMethod
+                          targetSelection
+                          targetType
+                          value {
+                            __typename
+                            ... on MoneyV2 { amount currencyCode }
+                            ... on PricingPercentageValue { percentage }
                           }
-                          ... on ScriptDiscountApplication {
-                            allocationMethod
-                            targetSelection
-                            targetType
-                            value {
-                              ... on MoneyV2 {
-                                amount
-                                currencyCode
-                              }
-                              ... on PricingPercentageValue {
-                                percentage
-                              }
-                            }
-                            title
+                          title
+                        }
+                        ... on ScriptDiscountApplication {
+                          allocationMethod
+                          targetSelection
+                          targetType
+                          value {
+                            __typename
+                            ... on MoneyV2 { amount currencyCode }
+                            ... on PricingPercentageValue { percentage }
                           }
+                          title
                         }
                       }
                     }
@@ -136,45 +119,19 @@ export class OrdersSyncService {
                           title
                           quantity
                           sku
-                          name
                           variant {
                             id
                             title
-                            price
                             sku
                           }
-                          originalUnitPrice
-                          discountedUnitPrice
                           discountAllocations {
-                            allocatedAmount {
-                              amount
-                              currencyCode
-                            }
+                            allocatedAmount { amount currencyCode }
                             discountApplication {
-                              ... on DiscountCodeApplication {
-                                allocationMethod
-                                targetSelection
-                                targetType
-                                code
-                              }
-                              ... on ManualDiscountApplication {
-                                allocationMethod
-                                targetSelection
-                                targetType
-                                title
-                              }
-                              ... on AutomaticDiscountApplication {
-                                allocationMethod
-                                targetSelection
-                                targetType
-                                title
-                              }
-                              ... on ScriptDiscountApplication {
-                                allocationMethod
-                                targetSelection
-                                targetType
-                                title
-                              }
+                              __typename
+                              ... on DiscountCodeApplication { code }
+                              ... on ManualDiscountApplication { title }
+                              ... on AutomaticDiscountApplication { title }
+                              ... on ScriptDiscountApplication { title }
                             }
                           }
                         }
@@ -287,6 +244,7 @@ export class OrdersSyncService {
     // Extract line items
     const lineItems = order.lineItems?.edges?.map((edge: any) => edge.node) || []
     
+    const money = (m: any | undefined) => (m?.shopMoney?.amount ?? m?.amount ?? null);
     return {
       id: order.id,
       name: order.name,
@@ -294,10 +252,10 @@ export class OrdersSyncService {
       app_id: order.app?.id ? parseInt(String(order.app.id).split('/').pop() || '0', 10) : undefined,
       createdAt: order.createdAt,
       updatedAt: order.updatedAt,
-      totalPrice: order.totalPrice,
-      subtotalPrice: order.subtotalPrice,
-      totalTax: order.totalTax,
-      totalDiscounts: order.totalDiscounts,
+      totalPrice: money(order.totalPriceSet),
+      subtotalPrice: money(order.subtotalPriceSet),
+      totalTax: money(order.totalTaxSet),
+      totalDiscounts: money(order.totalDiscountsSet),
       currencyCode: order.currencyCode,
       discountApplications,
       lineItems
