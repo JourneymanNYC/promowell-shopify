@@ -53,13 +53,25 @@ class DiscountClass:
         )
 
     @classmethod
-    def get_discounts(cls, shop_id: Optional[int] = None) -> List['DiscountClass']:
-        
-        """Fetch all discounts from shopify_raw_discounts table."""
-        
+    def get_discounts(cls, shop_id: Optional[int] = None, active_only: bool = True) -> List['DiscountClass']:
+
+        """
+        Fetch discounts from shopify_discounts_raw table.
+
+        Args:
+            shop_id: Filter by shop ID
+            active_only: If True, only fetch active discounts (default: True)
+
+        Returns:
+            List of DiscountClass instances
+        """
+
         query = supabase_admin.table('shopify_discounts_raw').select('*')
         if shop_id:
             query = query.eq('shop_id', shop_id)
+        if active_only:
+            query = query.eq('status', 'ACTIVE')
+
         response = query.execute()
 
         data = getattr(response, 'data', None)
@@ -87,13 +99,14 @@ class DiscountClass:
     # ---------- Metrics Stub ----------
 
     @classmethod
-    def calculate_all_metrics(cls, shop_id, target_date=None):
+    def calculate_all_metrics(cls, shop_id, target_date=None, active_only=True):
         """
         Calculate metrics for all discounts for a specific date.
 
         Args:
             shop_id: The shop ID to process
             target_date: Date to process (string 'YYYY-MM-DD', date object, or None for yesterday)
+            active_only: If True, only process active discounts (default: True)
 
         Returns:
             Dictionary of discount metrics by discount_id
@@ -111,7 +124,7 @@ class DiscountClass:
         start_datetime = datetime.combine(target_date, datetime.min.time()).replace(tzinfo=timezone.utc)
         end_datetime = datetime.combine(target_date, datetime.max.time()).replace(tzinfo=timezone.utc)
 
-        discounts = cls.get_discounts(shop_id)
+        discounts = cls.get_discounts(shop_id, active_only=active_only)
         results = {}
 
         for discount in discounts:

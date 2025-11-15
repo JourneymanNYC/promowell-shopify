@@ -19,23 +19,26 @@ class DiscountManager:
         """
         self.shop_id = shop_id
 
-    def process_daily_metrics(self, target_date: Optional[str] = None) -> Dict[str, Any]:
+    def process_daily_metrics(self, target_date: Optional[str] = None, active_only: bool = True) -> Dict[str, Any]:
         """
         Process and upsert discount metrics for a single day.
 
         Args:
             target_date: Date to process (YYYY-MM-DD format). Defaults to yesterday.
+            active_only: If True, only process active discounts (default: True)
 
         Returns:
             Dictionary with processing results
         """
         try:
-            print(f"Processing metrics for shop {self.shop_id}, date: {target_date or 'yesterday'}")
+            status_msg = "active discounts" if active_only else "all discounts"
+            print(f"Processing metrics for shop {self.shop_id}, date: {target_date or 'yesterday'} ({status_msg})")
 
             # Calculate metrics for the target date
             metrics = DiscountClass.calculate_all_metrics(
                 shop_id=self.shop_id,
-                target_date=target_date
+                target_date=target_date,
+                active_only=active_only
             )
 
             if not metrics:
@@ -70,17 +73,29 @@ class DiscountManager:
     def process_historical_metrics(
         self,
         start_date: str,
-        end_date: Optional[str] = None
+        end_date: Optional[str] = None,
+        active_only: bool = True
     ) -> Dict[str, Any]:
         """
         Process and upsert discount metrics for a date range (historical backfill).
 
         Args:
-            start_date: Start date (YYYY-MM-DD format)
-            end_date: End date (YYYY-MM-DD format). Defaults to 60 days.
+            start_date: EARLIEST date to process (YYYY-MM-DD format) - e.g., "2024-12-01"
+            end_date: LATEST date to process (YYYY-MM-DD format). Defaults to yesterday.
+            active_only: If True, only process active discounts (default: True)
 
         Returns:
             Dictionary with processing results for all dates
+
+        Examples:
+            # Backfill last 60 days (active discounts only)
+            manager.process_historical_metrics(start_date="2024-11-16")
+
+            # Backfill all discounts (including inactive)
+            manager.process_historical_metrics(
+                start_date="2024-12-01",
+                active_only=False
+            )
         """
         try:
             # Parse dates
@@ -88,7 +103,8 @@ class DiscountManager:
             if end_date:
                 end = datetime.fromisoformat(end_date).date()
             else:
-                end = (datetime.now(timezone.utc) - timedelta(days=60)).date()
+                # Default to yesterday (most recent complete day)
+                end = (datetime.now(timezone.utc) - timedelta(days=1)).date()
 
             # Validate date range
             if start > end:
@@ -114,7 +130,7 @@ class DiscountManager:
                 date_str = current_date.isoformat()
                 print(f"Processing {date_str}...")
 
-                result = self.process_daily_metrics(target_date=date_str)
+                result = self.process_daily_metrics(target_date=date_str, active_only=active_only)
                 results.append(result)
 
                 if result['success']:
@@ -176,11 +192,16 @@ if __name__ == "__main__":
     # result = manager.process_daily_metrics(target_date="2025-01-15")
     # print(result)
 
-    # Historical backfill - sync last 60 days
+    # Historical backfill - from specific date to yesterday
     result = manager.process_historical_metrics(
-        start_date="2025-01-01",
-        end_date="2025-11-15"
+        start_date="2025-09-01"  # Start date, end_date defaults to yesterday
     )
     print(result)
+
+    # Or backfill last 60 days dynamically
+    # from datetime import datetime, timedelta, timezone
+    # sixty_days_ago = (datetime.now(timezone.utc) - timedelta(days=60)).date().isoformat()
+    # result = manager.process_historical_metrics(start_date=sixty_days_ago)
+    # print(result)
 
     pass

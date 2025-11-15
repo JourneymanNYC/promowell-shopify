@@ -1,14 +1,22 @@
-import { useEffect } from "react";
+// React and Remix
+import { useEffect, useState } from "react";
 import type {
   ActionFunctionArgs,
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher } from "react-router";
+import { useFetcher, useLoaderData } from "react-router";
 import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
+// Supabase
+import { supabaseAdmin } from "../supabase/client.server";
+
+// Components
+import { DiscountMenu } from "../components/Menu";
+
+// Charting
 import {
   LineChart,
   Line,
@@ -28,11 +36,47 @@ const lineChartData = [
   { month: "June", revenue: 214 },
 ]
 
-
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  await authenticate.admin(request);
+  const { session } = await authenticate.admin(request);
 
-  return null;
+  // Fetch discounts from shopify_discounts_raw table
+  const { data: shopData } = await supabaseAdmin
+    .from('shops')
+    .select('id')
+    .eq('shop_domain', session.shop)
+    .single();
+
+  if (!shopData) {
+    return { discounts: [] };
+  }
+
+  const { data: discounts, error } = await supabaseAdmin
+    .from('shopify_discounts_raw')
+    .select('id, code, title, status, discount_type')
+    .eq('shop_id', shopData.id)
+    .order('status', { ascending: false }) // ACTIVE first
+    .order('title', { ascending: true });
+
+  if (error) {
+    console.error('Error fetching discounts:', error);
+    return { discounts: [] };
+  }
+
+  // Separate active and inactive
+  const activeDiscounts = discounts?.filter(d => d.status === 'ACTIVE') || [];
+  const inactiveDiscounts = discounts?.filter(d => d.status !== 'ACTIVE') || [];
+
+  const finalDiscounts = [...activeDiscounts, ...inactiveDiscounts];
+
+  console.log('Loader: Fetched discounts:', {
+    total: finalDiscounts.length,
+    active: activeDiscounts.length,
+    inactive: inactiveDiscounts.length
+  });
+
+  return {
+    discounts: finalDiscounts
+  };
 };
 
 export const action = async ({ request }: ActionFunctionArgs) => {
@@ -106,8 +150,17 @@ export const action = async ({ request }: ActionFunctionArgs) => {
 
 export default function Index() {
   const fetcher = useFetcher<typeof action>();
-
+  const loaderData = useLoaderData<typeof loader>();
   const shopify = useAppBridge();
+
+  // Ensure discounts is always an array
+  const discounts = loaderData?.discounts || [];
+
+  // Discount selection state
+  const [selectedDiscount, setSelectedDiscount] = useState<string>("all");
+  const [timePeriod, setTimePeriod] = useState<string>("last_7_days");
+
+  console.log('Dashboard rendered with discounts:', discounts.length);
 
   useEffect(() => {
     if (fetcher.data?.product?.id) {
@@ -118,13 +171,15 @@ export default function Index() {
   return (
     <s-page heading="Promowell Dashboard">
       <s-button slot="primary-action">
-        View Dashboard
+        Refresh Analytics
       </s-button>
       <s-stack direction="block" gap="base">
         <s-stack direction="inline" justifyContent="space-between" gap="small">
-          <s-button>
-            All channels <s-icon type="caret-down"></s-icon>
-          </s-button>
+          <DiscountMenu
+            discounts={discounts}
+            selectedDiscount={selectedDiscount}
+            onSelectDiscount={setSelectedDiscount}
+          />
           <s-stack direction="inline" gap="small">
             <s-button icon="calendar">Last 7 days</s-button>
             <s-button icon="calendar">Last 30 days</s-button>
