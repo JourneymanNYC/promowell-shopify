@@ -14,11 +14,9 @@ export class OrderService {
       console.log("Shop ID found:", shopId) // Debug log
       
       if (!shopId) {
-        // For now, let's continue without the shop ID check since the shop might not be in our database yet
         console.log("Shop not found in database, proceeding with Shopify API call")
       }
-
-      // TODO: Remove fixed page size of 50 in the GraphQL query and transfer to a query
+      
       const query = `
         query getOrders($after: String, $search: String) {
           orders(first: 250, after: $after, query: $search) {

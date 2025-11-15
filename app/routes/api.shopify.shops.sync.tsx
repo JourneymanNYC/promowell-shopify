@@ -1,6 +1,6 @@
 import type { LoaderFunctionArgs } from "react-router";
 import { authenticate } from "../shopify.server";
-import { supabaseAdmin } from "../supabase/client";
+import { supabaseAdmin } from "../supabase/client.server";
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   try {

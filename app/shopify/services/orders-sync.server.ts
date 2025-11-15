@@ -63,52 +63,54 @@ export class OrdersSyncService {
                     totalTaxSet { shopMoney { amount currencyCode } }
                     totalDiscountsSet { shopMoney { amount currencyCode } }
                     discountApplications(first: 250) {
-                      nodes {
-                        __typename
-                        ... on DiscountCodeApplication {
-                          allocationMethod
-                          targetSelection
-                          targetType
-                          value {
-                            __typename
-                            ... on MoneyV2 { amount currencyCode }
-                            ... on PricingPercentageValue { percentage }
+                      edges {
+                        node {
+                          __typename
+                          ... on DiscountCodeApplication {
+                            allocationMethod
+                            targetSelection
+                            targetType
+                            value {
+                              __typename
+                              ... on MoneyV2 { amount currencyCode }
+                              ... on PricingPercentageValue { percentage }
+                            }
+                            code
                           }
-                          code
-                        }
-                        ... on ManualDiscountApplication {
-                          allocationMethod
-                          targetSelection
-                          targetType
-                          value {
-                            __typename
-                            ... on MoneyV2 { amount currencyCode }
-                            ... on PricingPercentageValue { percentage }
+                          ... on ManualDiscountApplication {
+                            allocationMethod
+                            targetSelection
+                            targetType
+                            value {
+                              __typename
+                              ... on MoneyV2 { amount currencyCode }
+                              ... on PricingPercentageValue { percentage }
+                            }
+                            title
+                            description
                           }
-                          title
-                          description
-                        }
-                        ... on AutomaticDiscountApplication {
-                          allocationMethod
-                          targetSelection
-                          targetType
-                          value {
-                            __typename
-                            ... on MoneyV2 { amount currencyCode }
-                            ... on PricingPercentageValue { percentage }
+                          ... on AutomaticDiscountApplication {
+                            allocationMethod
+                            targetSelection
+                            targetType
+                            value {
+                              __typename
+                              ... on MoneyV2 { amount currencyCode }
+                              ... on PricingPercentageValue { percentage }
+                            }
+                            title
                           }
-                          title
-                        }
-                        ... on ScriptDiscountApplication {
-                          allocationMethod
-                          targetSelection
-                          targetType
-                          value {
-                            __typename
-                            ... on MoneyV2 { amount currencyCode }
-                            ... on PricingPercentageValue { percentage }
+                          ... on ScriptDiscountApplication {
+                            allocationMethod
+                            targetSelection
+                            targetType
+                            value {
+                              __typename
+                              ... on MoneyV2 { amount currencyCode }
+                              ... on PricingPercentageValue { percentage }
+                            }
+                            title
                           }
-                          title
                         }
                       }
                     }

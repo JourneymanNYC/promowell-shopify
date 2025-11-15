@@ -1,4 +1,4 @@
-import { supabaseAdmin } from '../supabase/client'
+import { supabaseAdmin } from '../supabase/client.server'
 
 export interface WebhookPayload {
   id: string
@@ -521,6 +521,37 @@ export class ShopifyWebhookService {
       const automaticDiscounts = discountApplications.filter((app: any) => app.__typename === 'AutomaticDiscountApplication')
       const manualDiscounts = discountApplications.filter((app: any) => app.__typename === 'ManualDiscountApplication')
 
+      // Extract discount codes array from discount applications
+      const discountCodes = Array.from(new Set(
+        discountApplications
+          .filter((app: any) => app?.__typename === 'DiscountCodeApplication' && app.code)
+          .map((app: any) => String(app.code))
+      ))
+
+      // Calculate total quantity from line items
+      let totalQuantity = 0
+      const lineItems = (normalized as any).lineItems || (orderData as any).line_items || []
+      for (const item of lineItems) {
+        totalQuantity += parseInt(String(item.quantity || 0), 10)
+      }
+
+      // Get first shopify_discount_id (numeric Shopify ID) from enriched applications or allocations
+      let firstShopifyDiscountId: number | null = null
+      for (const app of discountApplications) {
+        if (app.shopifyDiscountId) {
+          firstShopifyDiscountId = app.shopifyDiscountId
+          break
+        }
+      }
+      if (!firstShopifyDiscountId) {
+        for (const alloc of lineItemDiscountAllocations) {
+          if (alloc.shopifyDiscountId) {
+            firstShopifyDiscountId = alloc.shopifyDiscountId
+            break
+          }
+        }
+      }
+
       const orderToInsert: any = {
         shop_id: shopId,
         shopify_order_id: shopifyOrderId,
@@ -531,10 +562,13 @@ export class ShopifyWebhookService {
         total_tax: parseFloat(((normalized as any).totalTax ?? (orderData as any).total_tax ?? '0').toString()),
         total_discounts: (normalized as any).totalDiscounts ? parseFloat((normalized as any).totalDiscounts) : parseFloat(((orderData as any).total_discounts ?? (orderData as any).current_total_discounts ?? 0).toString()),
         currency: (normalized as any).currencyCode,
+        discount_codes: discountCodes,
         discount_applications: discountApplications,
         discount_allocations: lineItemDiscountAllocations,
         automatic_discount_applications: automaticDiscounts,
         manual_discount_applications: manualDiscounts,
+        quantity: totalQuantity,
+        shopify_discount_id: firstShopifyDiscountId,
         processed_at: null
       }
 
@@ -670,6 +704,37 @@ export class ShopifyWebhookService {
       const automaticDiscounts = discountApplications.filter((app: any) => app.__typename === 'AutomaticDiscountApplication')
       const manualDiscounts = discountApplications.filter((app: any) => app.__typename === 'ManualDiscountApplication')
 
+      // Extract discount codes array from discount applications
+      const discountCodes = Array.from(new Set(
+        discountApplications
+          .filter((app: any) => app?.__typename === 'DiscountCodeApplication' && app.code)
+          .map((app: any) => String(app.code))
+      ))
+
+      // Calculate total quantity from line items
+      let totalQuantity = 0
+      const lineItems = (orderData as any).lineItems || (orderData as any).line_items || []
+      for (const item of lineItems) {
+        totalQuantity += parseInt(String(item.quantity || 0), 10)
+      }
+
+      // Get first shopify_discount_id (numeric Shopify ID) from enriched applications or allocations
+      let firstShopifyDiscountId: number | null = null
+      for (const app of discountApplications) {
+        if (app.shopifyDiscountId) {
+          firstShopifyDiscountId = app.shopifyDiscountId
+          break
+        }
+      }
+      if (!firstShopifyDiscountId) {
+        for (const alloc of lineItemDiscountAllocations) {
+          if (alloc.shopifyDiscountId) {
+            firstShopifyDiscountId = alloc.shopifyDiscountId
+            break
+          }
+        }
+      }
+
       // Build partial update to avoid overwriting with empty values
       const orderToUpdate: any = { raw_data: orderData, updated_at: new Date().toISOString() }
       if (orderData.name) orderToUpdate.order_number = orderData.name
@@ -678,10 +743,13 @@ export class ShopifyWebhookService {
       if (orderData.totalTax !== undefined) orderToUpdate.total_tax = parseFloat(orderData.totalTax || '0')
       if (orderData.totalDiscounts !== undefined) orderToUpdate.total_discounts = orderData.totalDiscounts ? parseFloat(orderData.totalDiscounts) : 0
       if (orderData.currencyCode) orderToUpdate.currency = orderData.currencyCode
+      if (discountCodes && discountCodes.length >= 0) orderToUpdate.discount_codes = discountCodes
       if (discountApplications && discountApplications.length >= 0) orderToUpdate.discount_applications = discountApplications
       if (lineItemDiscountAllocations && lineItemDiscountAllocations.length >= 0) orderToUpdate.discount_allocations = lineItemDiscountAllocations
       if (automaticDiscounts && automaticDiscounts.length >= 0) orderToUpdate.automatic_discount_applications = automaticDiscounts
       if (manualDiscounts && manualDiscounts.length >= 0) orderToUpdate.manual_discount_applications = manualDiscounts
+      if (totalQuantity > 0) orderToUpdate.quantity = totalQuantity
+      if (firstShopifyDiscountId) orderToUpdate.shopify_discount_id = firstShopifyDiscountId
       // Partial update for channel fields
       if ((orderData as any).source_name) orderToUpdate.channel_source_name = (orderData as any).source_name
       if ((orderData as any).app_id) orderToUpdate.channel_app_id = (orderData as any).app_id

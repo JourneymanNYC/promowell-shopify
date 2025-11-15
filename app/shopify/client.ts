@@ -1,4 +1,4 @@
-import { supabaseAdmin } from "../supabase/client"
+import { supabaseAdmin } from "../supabase/client.server"
 
 // ==========================
 // Helper Functions
