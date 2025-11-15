@@ -9,9 +9,25 @@ import { useAppBridge } from "@shopify/app-bridge-react";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
-// Promotions list (if needed later) has been removed for now
+import {
+  LineChart,
+  Line,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
-// Selection controls were moved inline on the page header
+const lineChartData = [
+  { month: "January", revenue: 186 },
+  { month: "February", revenue: 305 },
+  { month: "March", revenue: 237 },
+  { month: "April", revenue: 73 },
+  { month: "May", revenue: 209 },
+  { month: "June", revenue: 214 },
+]
+
 
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   await authenticate.admin(request);
@@ -196,7 +212,25 @@ export default function Index() {
         <s-grid-item gridColumn="span 2" gridRow="span 1">
           <s-section heading="Discounted Sales Over Time">
             <s-box border="base" borderRadius="base" padding="base">
-              <s-text color="subdued">Chart placeholder</s-text>
+              <ResponsiveContainer width="100%" height={400}>
+                <LineChart data={lineChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
+                  <XAxis dataKey="date" tick={{ fill: "#8884d8" }} />
+                  <YAxis tick={{ fill: "#8884d8" }} />
+                  <Tooltip
+                    contentStyle={{ backgroundColor: "#1f1f1f", border: "none", borderRadius: 8 }}
+                    itemStyle={{ color: "#fff" }}
+                  />
+                  <Line
+                    type="monotone"
+                    dataKey="value"
+                    stroke="#8884d8"
+                    strokeWidth={3}
+                    dot={{ r: 5, fill: "#8884d8", strokeWidth: 2 }}
+                    activeDot={{ r: 7 }}
+                  />
+                </LineChart>
+              </ResponsiveContainer>
             </s-box>
           </s-section>
         </s-grid-item>
