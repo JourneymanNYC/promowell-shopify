@@ -1,8 +1,9 @@
 from decimal import Decimal, ROUND_HALF_UP, getcontext
 from typing import List, Dict, Optional, Any
 from datetime import datetime, timedelta, timezone
+import json
 
-from ..utils.supabase_client import supabase
+from app.transformer.utils.supabase_client import supabase
 
 class DiscountClass:
     """
@@ -13,16 +14,16 @@ class DiscountClass:
 
     def __init__(
         self,
-        discount_id: int,
-        shop_id: int,
-        code: str,
-        discount_percentage: Decimal,
-        active: bool = True,
+        shop_id,
+        discount_id,
+        code,
+        discount_percentage,
+        active
     ):
-        self.discount_id = discount_id
         self.shop_id = shop_id
+        self.discount_id = discount_id
         self.code = code
-        self.discount_percentage = Decimal(discount_percentage)
+        self.discount_percentage = discount_percentage
         self.active = active
 
     # ---------- Factory Methods ----------
@@ -30,6 +31,7 @@ class DiscountClass:
     @classmethod
     def from_dict(cls, data: Dict[str, Any]) -> 'DiscountClass':
         """Create DiscountClass instance from Supabase record."""
+        
         return cls(
             discount_id=data.get('discount_id') or data.get('id'),
             shop_id=data['shop_id'],
@@ -39,13 +41,15 @@ class DiscountClass:
         )
 
     @classmethod
-    def get_all(cls, shop_id: Optional[int] = None) -> List['DiscountClass']:
+    def get_discounts(cls, shop_id: Optional[int] = None) -> List['DiscountClass']:
+        
         """Fetch all discounts from shopify_raw_discounts table."""
-        query = supabase.table('shopify_raw_discounts').select('*')
+        
+        query = supabase.table('shopify_discounts_raw').select('*')
         if shop_id:
             query = query.eq('shop_id', shop_id)
-
         response = query.execute()
+
         data = getattr(response, 'data', None)
         if not data:
             raise Exception(f"No discounts found or Supabase error: {getattr(response, 'error', None)}")
@@ -60,10 +64,9 @@ class DiscountClass:
         (Assumes discount_codes JSON array contains `code` field.)
         """
         response = (
-            supabase.table('shopify_raw_orders')
+            supabase.table('shopify_orders_raw')
             .select('*')
             .eq('shop_id', self.shop_id)
-            .ilike('discount_codes->>code', f'%{self.code}%')
             .execute()
         )
 
@@ -71,26 +74,69 @@ class DiscountClass:
 
     # ---------- Metrics Stub ----------
 
-    def calculate_metrics(self) -> Dict[str, Any]:
-        """
-        Placeholder function to calculate metrics for this discount.
-        Replace later with actual logic.
-        """
-        orders = self.fetch_related_orders()
+    @classmethod
+    def calculate_all_metrics(cls, shop_id):
+        
+        discounts = cls.get_discounts(shop_id)
+        results = {}
 
-        metrics = {
-            "discount_id": self.discount_id,
-            "code": self.code,
-            "order_count": len(orders),
-            # You’ll add more fields later (e.g., total revenue, discount total, AOV, etc.)
-        }
+        for discount in discounts:
+            results[discount.code] = {
+                "discount_id": discount.discount_id,
+                "shop_id": discount.shop_id,
+                "code": discount.code,
+                "discount_percentage": discount.discount_percentage,
+                "active": discount.active,
+                "order_count": 0,
+                "total_revenue": Decimal('0.00'),
+                "total_discount_expense": Decimal('0.00'),
+                "average_discount_per_order": Decimal('0.00'),
+                "average_order_value": Decimal('0.00'),
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "updated_at": datetime.now(timezone.utc).isoformat(),
+            }
+        
+        orders = discount.fetch_related_orders()
 
-        return metrics
-    
+        for order in orders:
+            raw_data = order.get('raw_data', {})
+            if not raw_data:
+                continue
+
+            if isinstance(raw_data, str):
+                try:
+                    raw_data = json.loads(raw_data)
+                except json.JSONDecodeError:
+                    continue
+            
+            line_items = raw_data.get('lineItems', [])
+
+            for item in line_items:
+                for alloc in item.get('discountAllocations', []):
+                    discount_code = alloc.get('discountApplication', {}).get('code', '')
+                    amount = Decimal(alloc.get('allocatedAmount', '0').get('amount', '0'))
+
+                    if discount_code in results:
+                        results[discount_code]['order_count'] += 1
+                        results[discount_code]['total_discount_expense'] += amount
+                           
+        for code, metrics in results.items():
+            if metrics['order_count'] > 0:
+                metrics['average_discount_per_order'] = (metrics['total_discount_expense'] / metrics['order_count']).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+                metrics['average_order_value'] = (metrics['total_revenue'] / metrics['order_count']).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
+            
+            order_count = metrics['order_count']
+            metrics['created_at'] = datetime.now(timezone.utc).isoformat()
+            metrics['updated_at'] = datetime.now(timezone.utc).isoformat()
+        
+        return results
 
 # Example Usage:
-discounts = DiscountClass.get_all(shop_id=123)
+discount = DiscountClass.calculate_all_metrics(shop_id="e2bd9e4b-1e1e-4d9c-9d39-ba68f0f63e52")
 
-for d in discounts:
-    metrics = d.calculate_metrics()
-    print(metrics)
+for code, metrics in discount.items():
+    print("=" * 40)
+    print(f"Metrics for {code}:")
+    print("=" * 40)
+    for key, value in metrics.items():
+        print(f"{key}: {value}")
