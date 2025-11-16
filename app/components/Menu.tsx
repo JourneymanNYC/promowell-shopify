@@ -1,5 +1,8 @@
+import { useRef } from "react";
+
 interface Discount {
   id: string;
+  shopify_discount_id: number;
   code: string;
   title: string;
   status: string;
@@ -13,6 +16,8 @@ interface DiscountMenuProps {
 }
 
 export function DiscountMenu({ discounts, selectedDiscount, onSelectDiscount }: DiscountMenuProps) {
+  const menuRef = useRef<HTMLElement>(null);
+
   // Safety check - ensure discounts is an array
   const safeDiscounts = Array.isArray(discounts) ? discounts : [];
 
@@ -27,6 +32,13 @@ export function DiscountMenu({ discounts, selectedDiscount, onSelectDiscount }: 
     return discount ? (discount.code || discount.title) : 'All discounts';
   };
 
+  // Handle selection and close menu
+  const handleSelect = (discountId: string) => {
+    onSelectDiscount(discountId);
+    // Close the menu by removing the 'open' attribute
+    menuRef.current?.removeAttribute('open');
+  };
+
   console.log('DiscountMenu rendered:', { discountCount: safeDiscounts.length, selectedDiscount });
 
   return (
@@ -35,9 +47,9 @@ export function DiscountMenu({ discounts, selectedDiscount, onSelectDiscount }: 
         {getSelectedText()} <s-icon type="caret-down"></s-icon>
       </s-button>
 
-      <s-menu id="discount-menu" accessibilityLabel="Select discount">
+      <s-menu ref={menuRef} id="discount-menu" accessibilityLabel="Select discount">
         <s-section>
-          <s-button onClick={() => onSelectDiscount('all')}>
+          <s-button onClick={() => handleSelect('all')}>
             <s-text type={selectedDiscount === 'all' ? 'strong' : undefined}>
               All discounts
             </s-text>
@@ -49,7 +61,7 @@ export function DiscountMenu({ discounts, selectedDiscount, onSelectDiscount }: 
             {activeDiscounts.map((discount) => (
               <s-button
                 key={discount.id}
-                onClick={() => onSelectDiscount(discount.id)}
+                onClick={() => handleSelect(discount.id)}
               >
                 <s-stack direction="inline" gap="small-200" alignItems="center">
                   <s-text type={selectedDiscount === discount.id ? 'strong' : undefined}>
@@ -67,7 +79,7 @@ export function DiscountMenu({ discounts, selectedDiscount, onSelectDiscount }: 
             {inactiveDiscounts.map((discount) => (
               <s-button
                 key={discount.id}
-                onClick={() => onSelectDiscount(discount.id)}
+                onClick={() => handleSelect(discount.id)}
               >
                 <s-stack direction="inline" gap="small-200" alignItems="center">
                   <s-text

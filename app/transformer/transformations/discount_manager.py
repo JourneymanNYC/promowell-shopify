@@ -189,14 +189,14 @@ if __name__ == "__main__":
     # print(result)
 
     # Process a specific date
-    # result = manager.process_daily_metrics(target_date="2025-01-15")
-    # print(result)
+    result = manager.process_daily_metrics(target_date="2025-01-16")
+    print(result)
 
     # Historical backfill - from specific date to yesterday
-    result = manager.process_historical_metrics(
-        start_date="2025-09-01"  # Start date, end_date defaults to yesterday
-    )
-    print(result)
+    # result = manager.process_historical_metrics(
+    #     start_date="2025-09-01"  # Start date, end_date defaults to yesterday
+    # )
+    # print(result)
 
     # Or backfill last 60 days dynamically
     # from datetime import datetime, timedelta, timezone

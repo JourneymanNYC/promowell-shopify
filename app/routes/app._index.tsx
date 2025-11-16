@@ -1,12 +1,9 @@
 // React and Remix
-import { useEffect, useState } from "react";
 import type {
-  ActionFunctionArgs,
   HeadersFunction,
   LoaderFunctionArgs,
 } from "react-router";
-import { useFetcher, useLoaderData } from "react-router";
-import { useAppBridge } from "@shopify/app-bridge-react";
+import { useLoaderData, useNavigate } from "react-router";
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
 
@@ -15,29 +12,18 @@ import { supabaseAdmin } from "../supabase/client.server";
 
 // Components
 import { DiscountMenu } from "../components/Menu";
+import { TimeFilter } from "../components/TimeFilter";
+import { MetricsCard } from "../components/MetricsCard";
+import { AreaChartDisplay } from "../components/AreaChart";
 
-// Charting
-import {
-  LineChart,
-  Line,
-  XAxis,
-  YAxis,
-  CartesianGrid,
-  Tooltip,
-  ResponsiveContainer,
-} from "recharts";
-
-const lineChartData = [
-  { month: "January", revenue: 186 },
-  { month: "February", revenue: 305 },
-  { month: "March", revenue: 237 },
-  { month: "April", revenue: 73 },
-  { month: "May", revenue: 209 },
-  { month: "June", revenue: 214 },
-]
-
+// Loader function to fetch discounts and metrics
 export const loader = async ({ request }: LoaderFunctionArgs) => {
   const { session } = await authenticate.admin(request);
+
+  // Get parameters from URL search params
+  const url = new URL(request.url);
+  const timePeriod = url.searchParams.get('period') || '7';
+  const selectedDiscount = url.searchParams.get('discount') || 'all';
 
   // Fetch discounts from shopify_discounts_raw table
   const { data: shopData } = await supabaseAdmin
@@ -47,19 +33,19 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     .single();
 
   if (!shopData) {
-    return { discounts: [] };
+    return { discounts: [], metricsCardMetrics: null, timePeriod, selectedDiscount };
   }
 
   const { data: discounts, error } = await supabaseAdmin
     .from('shopify_discounts_raw')
-    .select('id, code, title, status, discount_type')
+    .select('id, shopify_discount_id, code, title, status, discount_type')
     .eq('shop_id', shopData.id)
     .order('status', { ascending: false }) // ACTIVE first
     .order('title', { ascending: true });
 
   if (error) {
     console.error('Error fetching discounts:', error);
-    return { discounts: [] };
+    return { discounts: [], metricsCardMetrics: null, timePeriod, selectedDiscount };
   }
 
   // Separate active and inactive
@@ -74,99 +60,200 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     inactive: inactiveDiscounts.length
   });
 
+  // Calculate date ranges for metrics
+  const today = new Date();
+  const startDate = new Date();
+
+  // Calculate current period start date
+  if (timePeriod === 'all') {
+    // For 'all', get the earliest date from the table
+    startDate.setFullYear(2000, 0, 1); // Set to a very old date
+  } else {
+    const days = parseInt(timePeriod);
+    startDate.setDate(today.getDate() - days);
+  }
+
+  // Calculate previous period dates (for comparison)
+  const previousEndDate = new Date(startDate);
+  previousEndDate.setDate(previousEndDate.getDate() - 1);
+
+  const previousStartDate = new Date(previousEndDate);
+  if (timePeriod !== 'all') {
+    const days = parseInt(timePeriod);
+    previousStartDate.setDate(previousEndDate.getDate() - days);
+  }
+
+  // Get the numeric shopify_discount_id if a specific discount is selected
+  let numericDiscountId: number | null = null;
+  if (selectedDiscount !== 'all') {
+    const selectedDiscountData = finalDiscounts.find(d => d.id === selectedDiscount);
+    numericDiscountId = selectedDiscountData?.shopify_discount_id || null;
+    console.log('Filtering by discount:', {
+      selectedDiscount,
+      numericDiscountId,
+      discountCode: selectedDiscountData?.code
+    });
+  }
+
+  // Build current period metrics query
+  let currentMetricsQuery = supabaseAdmin
+    .from('discount_performance_daily')
+    .select('total_orders_value, orders_count, revenue_uplift, average_order_value, total_discount_expense')
+    .eq('shop_id', shopData.id)
+    .gte('date', startDate.toISOString().split('T')[0])
+    .lte('date', today.toISOString().split('T')[0]);
+
+  // Filter by numeric discount_id if a specific discount is selected
+  if (numericDiscountId !== null) {
+    currentMetricsQuery = currentMetricsQuery.eq('discount_id', numericDiscountId);
+  }
+
+  const { data: currentMetrics } = await currentMetricsQuery;
+
+  // Build previous period metrics query (for comparison)
+  let previousMetricsQuery = timePeriod !== 'all' ? supabaseAdmin
+    .from('discount_performance_daily')
+    .select('total_orders_value, orders_count, revenue_uplift, average_order_value, total_discount_expense')
+    .eq('shop_id', shopData.id)
+    .gte('date', previousStartDate.toISOString().split('T')[0])
+    .lte('date', previousEndDate.toISOString().split('T')[0])
+    : null;
+
+  // Filter by numeric discount_id if a specific discount is selected
+  if (previousMetricsQuery && numericDiscountId !== null) {
+    previousMetricsQuery = previousMetricsQuery.eq('discount_id', numericDiscountId);
+  }
+
+  const { data: previousMetrics } = previousMetricsQuery ? await previousMetricsQuery : { data: null };
+
+  // Aggregate metrics
+  const aggregateMetrics = (data: any[]) => {
+    if (!data || data.length === 0) return null;
+
+    return data.reduce((acc, day) => ({
+      totalOrdersValue: (acc.totalOrdersValue || 0) + (day.total_orders_value || 0),
+      ordersCount: (acc.ordersCount || 0) + (day.orders_count || 0),
+      revenueUplift: (acc.revenueUplift || 0) + (day.revenue_uplift || 0),
+      averageOrderValue: (acc.averageOrderValue || 0) + (day.average_order_value || 0),
+      totalDiscountExpense: (acc.totalDiscountExpense || 0) + (day.total_discount_expense || 0),
+      count: (acc.count || 0) + 1,
+    }), { totalOrdersValue: 0, revenueUplift: 0, averageOrderValue: 0, totalDiscountExpense: 0, count: 0 });
+  };
+
+  const currentAgg = aggregateMetrics(currentMetrics || []);
+  const previousAgg = aggregateMetrics(previousMetrics || []);
+
+  console.log('Metrics aggregation:', {
+    currentMetricsCount: currentMetrics?.length,
+    previousMetricsCount: previousMetrics?.length,
+    currentAgg,
+    previousAgg
+  });
+
+  // Calculate average AOV (since it's averaged per day)
+  const metricsCardMetrics = currentAgg ? {
+    totalOrdersValue: currentAgg.totalOrdersValue,
+    ordersCount: currentAgg.ordersCount,
+    revenueUplift: currentAgg.revenueUplift,
+    averageOrderValue: currentAgg.ordersCount > 0 ? currentAgg.totalOrdersValue / currentAgg.ordersCount : 0,
+    totalDiscountExpense: currentAgg.totalDiscountExpense,
+    previousTotalOrdersValue: previousAgg?.totalOrdersValue,
+    previousRevenueUplift: previousAgg?.revenueUplift,
+    previousAverageOrderValue: previousAgg && previousAgg.count > 0
+      ? previousAgg.totalOrdersValue / previousAgg.ordersCount
+      : undefined,
+    previousTotalDiscountExpense: previousAgg?.totalDiscountExpense,
+  } : null;
+
+  console.log('Final metricsCardMetrics:', metricsCardMetrics);
+
+  // Get metrics for AreaChart
+  let areaChartMetricsQuery = supabaseAdmin
+    .from('discount_performance_daily')
+    .select('date, total_orders_value')
+    .eq('shop_id', shopData.id)
+    .gte('date', startDate.toISOString().split('T')[0])
+    .lte('date', today.toISOString().split('T')[0])
+    .order('date', { ascending: true });
+
+  // Filter by numeric discount_id if a specific discount is selected
+  if (numericDiscountId !== null) {
+    areaChartMetricsQuery = areaChartMetricsQuery.eq('discount_id', numericDiscountId);
+  }
+
+  const { data: rawAreaChartMetrics, error: areaChartError } = await areaChartMetricsQuery;
+
+  const todayDateString = today.toISOString().split('T')[0];
+
+  console.log('AreaChart data fetch:', {
+    rawDataCount: rawAreaChartMetrics?.length,
+    error: areaChartError,
+    dateRange: {
+      start: startDate.toISOString().split('T')[0],
+      end: todayDateString
+    },
+    sampleData: rawAreaChartMetrics?.[0]
+  });
+
+  // Transform data
+  const areaChartMetrics = rawAreaChartMetrics?.map(item => ({
+    name: item.date,
+    Sales: item.total_orders_value || 0,
+  })) || [];
+
+  // Ensure today is always included in the chart
+  const hasTodayData = areaChartMetrics.some(metric => metric.name === todayDateString);
+  if (!hasTodayData && timePeriod !== 'all') {
+    areaChartMetrics.push({
+      name: todayDateString,
+      Sales: 0
+    });
+    // Sort by date to ensure today appears at the end
+    areaChartMetrics.sort((a, b) => a.name.localeCompare(b.name));
+  }
+
+  console.log('AreaChart transformed data:', {
+    count: areaChartMetrics.length,
+    sample: areaChartMetrics[0],
+    includesIToday: hasTodayData,
+    todayDate: todayDateString
+  });
+
   return {
-    discounts: finalDiscounts
+    discounts: finalDiscounts,
+    metricsCardMetrics,
+    areaChartMetrics,
+    timePeriod,
+    selectedDiscount
   };
 };
 
-export const action = async ({ request }: ActionFunctionArgs) => {
-  const { admin } = await authenticate.admin(request);
-  const color = ["Red", "Orange", "Yellow", "Green"][
-    Math.floor(Math.random() * 4)
-  ];
-  const response = await admin.graphql(
-    `#graphql
-      mutation populateProduct($product: ProductCreateInput!) {
-        productCreate(product: $product) {
-          product {
-            id
-            title
-            handle
-            status
-            variants(first: 10) {
-              edges {
-                node {
-                  id
-                  price
-                  barcode
-                  createdAt
-                }
-              }
-            }
-          }
-        }
-      }`,
-    {
-      variables: {
-        product: {
-          title: `${color} Snowboard`,
-        },
-      },
-    },
-  );
-  const responseJson = await response.json();
 
-  const product = responseJson.data!.productCreate!.product!;
-  const variantId = product.variants.edges[0]!.node!.id!;
 
-  const variantResponse = await admin.graphql(
-    `#graphql
-    mutation shopifyReactRouterTemplateUpdateVariant($productId: ID!, $variants: [ProductVariantsBulkInput!]!) {
-      productVariantsBulkUpdate(productId: $productId, variants: $variants) {
-        productVariants {
-          id
-          price
-          barcode
-          createdAt
-        }
-      }
-    }`,
-    {
-      variables: {
-        productId: product.id,
-        variants: [{ id: variantId, price: "100.00" }],
-      },
-    },
-  );
 
-  const variantResponseJson = await variantResponse.json();
-
-  return {
-    product: responseJson!.data!.productCreate!.product,
-    variant:
-      variantResponseJson!.data!.productVariantsBulkUpdate!.productVariants,
-  };
-};
 
 export default function Index() {
-  const fetcher = useFetcher<typeof action>();
   const loaderData = useLoaderData<typeof loader>();
-  const shopify = useAppBridge();
+  const navigate = useNavigate();
 
-  // Ensure discounts is always an array
+  // Get data from loader
   const discounts = loaderData?.discounts || [];
-
-  // Discount selection state
-  const [selectedDiscount, setSelectedDiscount] = useState<string>("all");
-  const [timePeriod, setTimePeriod] = useState<string>("last_7_days");
+  const metricsCardMetrics = loaderData?.metricsCardMetrics || null;
+  const areaChartMetrics = loaderData?.areaChartMetrics || [];
+  const timePeriod = loaderData?.timePeriod || '7';
+  const selectedDiscount = loaderData?.selectedDiscount || 'all';
 
   console.log('Dashboard rendered with discounts:', discounts.length);
 
-  useEffect(() => {
-    if (fetcher.data?.product?.id) {
-      shopify.toast.show("Product created");
-    }
-  }, [fetcher.data?.product?.id, shopify]);
+  // Handle time period change while preserving discount selection
+  const handleTimePeriodChange = (period: string) => {
+    navigate(`?period=${period}&discount=${selectedDiscount}`);
+  };
+
+  // Handle discount change while preserving time period
+  const handleDiscountChange = (discount: string) => {
+    navigate(`?period=${timePeriod}&discount=${discount}`);
+  };
 
   return (
     <s-page heading="Promowell Dashboard">
@@ -178,114 +265,21 @@ export default function Index() {
           <DiscountMenu
             discounts={discounts}
             selectedDiscount={selectedDiscount}
-            onSelectDiscount={setSelectedDiscount}
+            onSelectDiscount={handleDiscountChange}
           />
-          <s-stack direction="inline" gap="small">
-            <s-button icon="calendar">Last 7 days</s-button>
-            <s-button icon="calendar">Last 30 days</s-button>
-            <s-button icon="calendar">Entire Period</s-button>
-          </s-stack>
+          <TimeFilter
+            selectedTimePeriod={timePeriod}
+            onSelectTimePeriod={handleTimePeriodChange}
+          />
         </s-stack>
 
-      <s-section padding="base">
-        <s-grid
-          gridTemplateColumns="@container (inline-size <= 400px) 1fr, 1fr auto 1fr auto 1fr auto 1fr"
-          gap="small"
-        >
-          <s-clickable
-            href=""
-            paddingBlock="small-400"
-            paddingInline="small-100"
-            borderRadius="base"
-          >
-            <s-grid gap="small-300">
-              <s-heading>Total Designs</s-heading>
-              <s-stack direction="inline" gap="small-200">
-                <s-text>156</s-text>
-                <s-badge tone="success" icon="arrow-up">
-                  {" "}
-                  12%{" "}
-                </s-badge>
-              </s-stack>
-            </s-grid>
-          </s-clickable>
-          <s-divider direction="block" />
-          <s-clickable
-            href=""
-            paddingBlock="small-400"
-            paddingInline="small-100"
-            borderRadius="base"
-          >
-            <s-grid gap="small-300">
-              <s-heading>Units Sold</s-heading>
-              <s-stack direction="inline" gap="small-200">
-                <s-text>2,847</s-text>
-                <s-badge tone="warning">0%</s-badge>
-              </s-stack>
-            </s-grid>
-          </s-clickable>
-          <s-divider direction="block" />
-          <s-clickable
-            href=""
-            paddingBlock="small-400"
-            paddingInline="small-100"
-            borderRadius="base"
-          >
-            <s-grid gap="small-300">
-              <s-heading>Return Rate</s-heading>
-              <s-stack direction="inline" gap="small-200">
-                <s-text>3.2%</s-text>
-                <s-badge tone="critical" icon="arrow-down">
-                  {" "}
-                  0.8%{" "}
-                </s-badge>
-              </s-stack>
-            </s-grid>
-          </s-clickable>
-          <s-divider direction="block" />
-          <s-clickable
-            href=""
-            paddingBlock="small-400"
-            paddingInline="small-100"
-            borderRadius="base"
-          >
-            <s-grid gap="small-300">
-              <s-heading>Return Rate</s-heading>
-              <s-stack direction="inline" gap="small-200">
-                <s-text>3.2%</s-text>
-                <s-badge tone="critical" icon="arrow-down">
-                  {" "}
-                  0.8%{" "}
-                </s-badge>
-              </s-stack>
-            </s-grid>
-          </s-clickable>
-        </s-grid>
-      </s-section>
+      <MetricsCard metrics={metricsCardMetrics} />
 
       <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base">
         <s-grid-item gridColumn="span 2" gridRow="span 1">
           <s-section heading="Discounted Sales Over Time">
             <s-box border="base" borderRadius="base" padding="base">
-              <ResponsiveContainer width="100%" height={400}>
-                <LineChart data={lineChartData} margin={{ top: 20, right: 30, left: 20, bottom: 5 }}>
-                  <CartesianGrid strokeDasharray="3 3" stroke="#e0e0e0" />
-                  <XAxis dataKey="date" tick={{ fill: "#8884d8" }} />
-                  <YAxis tick={{ fill: "#8884d8" }} />
-                  <Tooltip
-                    contentStyle={{ backgroundColor: "#1f1f1f", border: "none", borderRadius: 8 }}
-                    itemStyle={{ color: "#fff" }}
-                  />
-                  <Line
-                    type="monotone"
-                    dataKey="value"
-                    stroke="#8884d8"
-                    strokeWidth={3}
-                    dot={{ r: 5, fill: "#8884d8", strokeWidth: 2 }}
-                    activeDot={{ r: 7 }}
-                  />
-                </LineChart>
-              </ResponsiveContainer>
+              <AreaChartDisplay metrics={areaChartMetrics} />
             </s-box>
           </s-section>
         </s-grid-item>
