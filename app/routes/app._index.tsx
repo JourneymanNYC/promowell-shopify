@@ -1,31 +1,55 @@
-// React and Remix
 import type {
   HeadersFunction,
   LoaderFunctionArgs,
-} from "react-router";
-import { useLoaderData, useNavigate } from "react-router";
+} from 'react-router';
+import { useLoaderData } from 'react-router';
+
 import { authenticate } from "../shopify.server";
 import { boundary } from "@shopify/shopify-app-react-router/server";
-
-// Supabase
 import { supabaseAdmin } from "../supabase/client.server";
+import Dashboard from "../components/Dashboard";
 
-// Components
-import { DiscountMenu } from "../components/Menu";
-import { TimeFilter } from "../components/TimeFilter";
-import { MetricsCard } from "../components/MetricsCard";
-import { AreaChartDisplay } from "../components/AreaChart";
-
-// Loader function to fetch discounts and metrics
 export const loader = async ({ request }: LoaderFunctionArgs) => {
-  const { session } = await authenticate.admin(request);
 
-  // Get parameters from URL search params
+  // ==================================
+  // Get search params and date ranges
+  // ==================================
+
+  // Get parameters from the request URL
   const url = new URL(request.url);
   const timePeriod = url.searchParams.get('period') || '7';
   const selectedDiscount = url.searchParams.get('discount') || 'all';
 
-  // Fetch discounts from shopify_discounts_raw table
+  // Calculate date ranges
+  const today = new Date();
+  const startDate = new Date();
+
+  if (timePeriod === 'all') {
+    startDate.setFullYear(startDate.getFullYear() - 5); // 5 years ago
+  } else {
+    startDate.setDate(startDate.getDate() - parseInt(timePeriod)); // sets time period back x days
+  }
+
+  // Calculate previous period for comparison
+  const previousEndDate = new Date(startDate);
+  previousEndDate.setDate(previousEndDate.getDate() - 1);
+  const previousStartDate = new Date(previousEndDate);
+  if (timePeriod === 'all') {
+    previousStartDate.setFullYear(previousStartDate.getFullYear() - 5);
+  } else {
+    previousStartDate.setDate(previousStartDate.getDate() - parseInt(timePeriod));
+  }
+
+  // =======================
+  // Authenticate admin user
+  // =======================
+
+  const { session } = await authenticate.admin(request);
+  if (!session) {
+    throw new Response("Unauthorized", { status: 401 });
+  }
+
+  //Fetch shop ID
   const { data: shopData } = await supabaseAdmin
     .from('shops')
     .select('id')
@@ -33,55 +57,30 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     .single();
 
   if (!shopData) {
-    return { discounts: [], metricsCardMetrics: null, timePeriod, selectedDiscount };
+    return { discounts: [], metricsCardMetrics: null, areaChartMetrics: [], timePeriod, selectedDiscount };
   }
 
+  // =================================================
+  // Fetch discount information from Supabase
+  // =================================================
+
+  // Fetch discounts information; parse and order based on ACTIVE/INACTIVE status
   const { data: discounts, error } = await supabaseAdmin
-    .from('shopify_discounts_raw')
-    .select('id, shopify_discount_id, code, title, status, discount_type')
-    .eq('shop_id', shopData.id)
-    .order('status', { ascending: false }) // ACTIVE first
-    .order('title', { ascending: true });
+  .from('shopify_discounts_raw')
+  .select('id, shopify_discount_id, code, title, status, discount_type')
+  .eq('shop_id', shopData.id)
+  .order('status', { ascending: false })
+  .order('title', { ascending: true });
 
   if (error) {
     console.error('Error fetching discounts:', error);
-    return { discounts: [], metricsCardMetrics: null, timePeriod, selectedDiscount };
+    return { discounts: [], metricsCardMetrics: null, areaChartMetrics: [], timePeriod, selectedDiscount };
   }
 
-  // Separate active and inactive
-  const activeDiscounts = discounts?.filter(d => d.status === 'ACTIVE') || [];
-  const inactiveDiscounts = discounts?.filter(d => d.status !== 'ACTIVE') || [];
-
+  // Separate active and inactive discounts
+  const activeDiscounts = discounts.filter(discount => discount.status === 'ACTIVE') || [];
+  const inactiveDiscounts = discounts.filter(discount => discount.status !== 'ACTIVE') || [];
   const finalDiscounts = [...activeDiscounts, ...inactiveDiscounts];
-
-  console.log('Loader: Fetched discounts:', {
-    total: finalDiscounts.length,
-    active: activeDiscounts.length,
-    inactive: inactiveDiscounts.length
-  });
-
-  // Calculate date ranges for metrics
-  const today = new Date();
-  const startDate = new Date();
-
-  // Calculate current period start date
-  if (timePeriod === 'all') {
-    // For 'all', get the earliest date from the table
-    startDate.setFullYear(2000, 0, 1); // Set to a very old date
-  } else {
-    const days = parseInt(timePeriod);
-    startDate.setDate(today.getDate() - days);
-  }
-
-  // Calculate previous period dates (for comparison)
-  const previousEndDate = new Date(startDate);
-  previousEndDate.setDate(previousEndDate.getDate() - 1);
-
-  const previousStartDate = new Date(previousEndDate);
-  if (timePeriod !== 'all') {
-    const days = parseInt(timePeriod);
-    previousStartDate.setDate(previousEndDate.getDate() - days);
-  }
 
   // Get the numeric shopify_discount_id if a specific discount is selected
   let numericDiscountId: number | null = null;
@@ -95,7 +94,11 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     });
   }
 
-  // Build current period metrics query
+  // ================================================
+  // Fetch Metrics for MetricsCard and AreaChart
+  // ================================================
+
+  // Build the base query
   let currentMetricsQuery = supabaseAdmin
     .from('discount_performance_daily')
     .select('total_orders_value, orders_count, revenue_uplift, average_order_value, total_discount_expense')
@@ -103,69 +106,87 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     .gte('date', startDate.toISOString().split('T')[0])
     .lte('date', today.toISOString().split('T')[0]);
 
-  // Filter by numeric discount_id if a specific discount is selected
   if (numericDiscountId !== null) {
     currentMetricsQuery = currentMetricsQuery.eq('discount_id', numericDiscountId);
   }
 
   const { data: currentMetrics } = await currentMetricsQuery;
 
-  // Build previous period metrics query (for comparison)
-  let previousMetricsQuery = timePeriod !== 'all' ? supabaseAdmin
+  // Previous period metrics
+  let previousMetricsQuery = supabaseAdmin
     .from('discount_performance_daily')
     .select('total_orders_value, orders_count, revenue_uplift, average_order_value, total_discount_expense')
     .eq('shop_id', shopData.id)
     .gte('date', previousStartDate.toISOString().split('T')[0])
-    .lte('date', previousEndDate.toISOString().split('T')[0])
-    : null;
+    .lte('date', previousEndDate.toISOString().split('T')[0]);
 
-  // Filter by numeric discount_id if a specific discount is selected
   if (previousMetricsQuery && numericDiscountId !== null) {
     previousMetricsQuery = previousMetricsQuery.eq('discount_id', numericDiscountId);
   }
 
   const { data: previousMetrics } = previousMetricsQuery ? await previousMetricsQuery : { data: null };
 
-  // Aggregate metrics
-  const aggregateMetrics = (data: any[]) => {
-    if (!data || data.length === 0) return null;
+  // Calculate aggregated metrics for MetricsCard
+  const aggregateMetrics = (data: any[] | null) => {
+  if (!data || data.length === 0) return null;
 
-    return data.reduce((acc, day) => ({
-      totalOrdersValue: (acc.totalOrdersValue || 0) + (day.total_orders_value || 0),
-      ordersCount: (acc.ordersCount || 0) + (day.orders_count || 0),
-      revenueUplift: (acc.revenueUplift || 0) + (day.revenue_uplift || 0),
-      averageOrderValue: (acc.averageOrderValue || 0) + (day.average_order_value || 0),
-      totalDiscountExpense: (acc.totalDiscountExpense || 0) + (day.total_discount_expense || 0),
-      count: (acc.count || 0) + 1,
-    }), { totalOrdersValue: 0, revenueUplift: 0, averageOrderValue: 0, totalDiscountExpense: 0, count: 0 });
+  const aggregated = data.reduce(
+    (acc, day) => {
+      const totalValue = day.total_orders_value || 0;
+      const orders = day.orders_count || 0;
+      const discountExpense = day.total_discount_expense || 0;
+
+      return {
+        totalOrdersValue: acc.totalOrdersValue + totalValue,
+        ordersCount: acc.ordersCount + orders,
+        totalDiscountExpense: acc.totalDiscountExpense + discountExpense,
+
+        // Traditional revenue uplift
+        revenueUplift: acc.revenueUplift + (totalValue - discountExpense),
+
+        count: acc.count + 1,
+      };
+    },
+    {
+      totalOrdersValue: 0,
+      ordersCount: 0,
+      revenueUplift: 0,
+      totalDiscountExpense: 0,
+      count: 0,
+    }
+  );
+
+  // Weighted Average Order Value
+  const weightedAOV =
+    aggregated.ordersCount > 0
+      ? aggregated.totalOrdersValue / aggregated.ordersCount
+      : 0;
+
+  return {
+    ...aggregated,
+    averageOrderValue: weightedAOV,
   };
+};
 
   const currentAgg = aggregateMetrics(currentMetrics || []);
   const previousAgg = aggregateMetrics(previousMetrics || []);
 
-  console.log('Metrics aggregation:', {
-    currentMetricsCount: currentMetrics?.length,
-    previousMetricsCount: previousMetrics?.length,
-    currentAgg,
-    previousAgg
-  });
-
-  // Calculate average AOV (since it's averaged per day)
+  // Prepare metrics for MetricsCard
   const metricsCardMetrics = currentAgg ? {
     totalOrdersValue: currentAgg.totalOrdersValue,
     ordersCount: currentAgg.ordersCount,
     revenueUplift: currentAgg.revenueUplift,
-    averageOrderValue: currentAgg.ordersCount > 0 ? currentAgg.totalOrdersValue / currentAgg.ordersCount : 0,
+    averageOrderValue: currentAgg.averageOrderValue,
     totalDiscountExpense: currentAgg.totalDiscountExpense,
     previousTotalOrdersValue: previousAgg?.totalOrdersValue,
     previousRevenueUplift: previousAgg?.revenueUplift,
-    previousAverageOrderValue: previousAgg && previousAgg.count > 0
-      ? previousAgg.totalOrdersValue / previousAgg.ordersCount
-      : undefined,
+    previousAverageOrderValue: previousAgg?.averageOrderValue,
     previousTotalDiscountExpense: previousAgg?.totalDiscountExpense,
   } : null;
 
-  console.log('Final metricsCardMetrics:', metricsCardMetrics);
+  // ==================================
+  // AreaChart Metrics Query
+  // ==================================
 
   // Get metrics for AreaChart
   let areaChartMetricsQuery = supabaseAdmin
@@ -201,22 +222,36 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
     Sales: item.total_orders_value || 0,
   })) || [];
 
-  // Ensure today is always included in the chart
+  // ======================================================
+  // Fetch REALTIME today's metrics directly (SUM on today)
+  // ======================================================
+  const { data: todayMetricsRaw } = await supabaseAdmin
+    .from('discount_performance_daily')
+    .select('total_orders_value')
+    .eq('shop_id', shopData.id)
+    .eq('date', todayDateString)
+    .maybeSingle();
+
+  const realTimeTodaySales = todayMetricsRaw?.total_orders_value || 0;
+
+  // Ensure today is always included in the chart, using REAL values
   const hasTodayData = areaChartMetrics.some(metric => metric.name === todayDateString);
+
   if (!hasTodayData && timePeriod !== 'all') {
     areaChartMetrics.push({
       name: todayDateString,
-      Sales: 0
+      Sales: realTimeTodaySales,
     });
-    // Sort by date to ensure today appears at the end
+
     areaChartMetrics.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  console.log('AreaChart transformed data:', {
-    count: areaChartMetrics.length,
-    sample: areaChartMetrics[0],
-    includesIToday: hasTodayData,
-    todayDate: todayDateString
+  console.log('=== LOADER RETURNING DATA ===', {
+    discountsCount: finalDiscounts.length,
+    metricsCardMetrics,
+    areaChartMetricsCount: areaChartMetrics.length,
+    timePeriod,
+    selectedDiscount
   });
 
   return {
@@ -228,154 +263,27 @@ export const loader = async ({ request }: LoaderFunctionArgs) => {
   };
 };
 
-
-
-
-
-export default function Index() {
-  const loaderData = useLoaderData<typeof loader>();
-  const navigate = useNavigate();
-
-  // Get data from loader
-  const discounts = loaderData?.discounts || [];
-  const metricsCardMetrics = loaderData?.metricsCardMetrics || null;
-  const areaChartMetrics = loaderData?.areaChartMetrics || [];
-  const timePeriod = loaderData?.timePeriod || '7';
-  const selectedDiscount = loaderData?.selectedDiscount || 'all';
-
-  console.log('Dashboard rendered with discounts:', discounts.length);
-
-  // Handle time period change while preserving discount selection
-  const handleTimePeriodChange = (period: string) => {
-    navigate(`?period=${period}&discount=${selectedDiscount}`);
-  };
-
-  // Handle discount change while preserving time period
-  const handleDiscountChange = (discount: string) => {
-    navigate(`?period=${timePeriod}&discount=${discount}`);
-  };
-
-  return (
-    <s-page heading="Promowell Dashboard">
-      <s-button slot="primary-action">
-        Refresh Analytics
-      </s-button>
-      <s-stack direction="block" gap="base">
-        <s-stack direction="inline" justifyContent="space-between" gap="small">
-          <DiscountMenu
-            discounts={discounts}
-            selectedDiscount={selectedDiscount}
-            onSelectDiscount={handleDiscountChange}
-          />
-          <TimeFilter
-            selectedTimePeriod={timePeriod}
-            onSelectTimePeriod={handleTimePeriodChange}
-          />
-        </s-stack>
-
-      <MetricsCard metrics={metricsCardMetrics} />
-
-      <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base">
-        <s-grid-item gridColumn="span 2" gridRow="span 1">
-          <s-section heading="Discounted Sales Over Time">
-            <s-box border="base" borderRadius="base" padding="base">
-              <AreaChartDisplay metrics={areaChartMetrics} />
-            </s-box>
-          </s-section>
-        </s-grid-item>
-        <s-grid-item gridColumn="span 1" gridRow="span 1">
-          <s-section heading="Next Chart">
-            <s-box border="base" borderRadius="base" padding="base">
-              <s-text color="subdued">Chart placeholder</s-text>
-            </s-box>
-          </s-section>
-        </s-grid-item>
-      </s-grid>
-
-      <s-grid gridTemplateColumns="repeat(3, 1fr)" gap="base">
-        <s-grid-item gridColumn="span 1" gridRow="span 1">
-          <s-section heading="Next Chart"></s-section>
-        </s-grid-item>
-        <s-grid-item gridColumn="span 1" gridRow="span 1">
-          <s-section heading="Next Chart"></s-section>
-        </s-grid-item>
-        <s-grid-item gridColumn="span 1" gridRow="span 1">
-          <s-section heading="Next Chart"></s-section>
-        </s-grid-item>
-      </s-grid>
-
-      <s-section padding="base">
-        <s-table>
-          <s-table-header-row>
-            <s-table-header listSlot="primary">Product</s-table-header>
-            <s-table-header listSlot="kicker">SKU</s-table-header>
-            <s-table-header listSlot="inline">Status</s-table-header>
-            <s-table-header listSlot="labeled" format="numeric">Inventory</s-table-header>
-            <s-table-header listSlot="labeled" format="currency">Price</s-table-header>
-            <s-table-header listSlot="labeled">Last updated</s-table-header>
-          </s-table-header-row>
-
-          <s-table-body>
-            <s-table-row>
-              <s-table-cell>Water bottle</s-table-cell>
-              <s-table-cell>WB-001</s-table-cell>
-              <s-table-cell>
-                <s-badge tone="success">Active</s-badge>
-              </s-table-cell>
-              <s-table-cell>128</s-table-cell>
-              <s-table-cell>$24.99</s-table-cell>
-              <s-table-cell>2 hours ago</s-table-cell>
-            </s-table-row>
-            <s-table-row>
-              <s-table-cell>T-shirt</s-table-cell>
-              <s-table-cell>TS-002</s-table-cell>
-              <s-table-cell>
-                <s-badge tone="warning">Low stock</s-badge>
-              </s-table-cell>
-              <s-table-cell>15</s-table-cell>
-              <s-table-cell>$19.99</s-table-cell>
-              <s-table-cell>1 day ago</s-table-cell>
-            </s-table-row>
-            <s-table-row>
-              <s-table-cell>Cutting board</s-table-cell>
-              <s-table-cell>CB-003</s-table-cell>
-              <s-table-cell>
-                <s-badge tone="critical">Out of stock</s-badge>
-              </s-table-cell>
-              <s-table-cell>0</s-table-cell>
-              <s-table-cell>$34.99</s-table-cell>
-              <s-table-cell>3 days ago</s-table-cell>
-            </s-table-row>
-            <s-table-row>
-              <s-table-cell>Notebook set</s-table-cell>
-              <s-table-cell>NB-004</s-table-cell>
-              <s-table-cell>
-                <s-badge tone="success">Active</s-badge>
-              </s-table-cell>
-              <s-table-cell>245</s-table-cell>
-              <s-table-cell>$12.99</s-table-cell>
-              <s-table-cell>5 hours ago</s-table-cell>
-            </s-table-row>
-            <s-table-row>
-              <s-table-cell>Stainless steel straws</s-table-cell>
-              <s-table-cell>SS-005</s-table-cell>
-              <s-table-cell>
-                <s-badge tone="success">Active</s-badge>
-              </s-table-cell>
-              <s-table-cell>89</s-table-cell>
-              <s-table-cell>$9.99</s-table-cell>
-              <s-table-cell>1 hour ago</s-table-cell>
-            </s-table-row>
-          </s-table-body>
-        </s-table>
-      </s-section>
-
-      </s-stack>
-
-    </s-page>
-  );
-}
-
 export const headers: HeadersFunction = (headersArgs) => {
   return boundary.headers(headersArgs);
 };
+
+export default function Index() {
+  const loaderData = useLoaderData<typeof loader>();
+
+  console.log('=== INDEX COMPONENT RECEIVED ===', {
+    loaderData,
+    hasDiscounts: !!loaderData?.discounts,
+    discountsLength: loaderData?.discounts?.length,
+    hasMetrics: !!loaderData?.metricsCardMetrics
+  });
+
+  return (
+    <Dashboard
+      discounts={loaderData?.discounts || []}
+      metricsCardMetrics={loaderData?.metricsCardMetrics || null}
+      areaChartMetrics={loaderData?.areaChartMetrics || []}
+      timePeriod={loaderData?.timePeriod || '7'}
+      selectedDiscount={loaderData?.selectedDiscount || 'all'}
+    />
+  );
+}
