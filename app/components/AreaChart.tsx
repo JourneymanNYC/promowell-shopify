@@ -34,7 +34,7 @@ export function AreaChartDisplay({ metrics }: AreaChartProps) {
   }
 
   return (
-    <ResponsiveContainer width="100%" height={400}>
+    <ResponsiveContainer width="100%" height={350}>
       <AreaChart
         data={metrics}
         margin={{
